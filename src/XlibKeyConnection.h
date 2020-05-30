@@ -16,6 +16,5 @@ public:
 	};
 
 	std::function<void(Mode, int)> m_memoryCallback;
-
 };
 
