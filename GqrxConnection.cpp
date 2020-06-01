@@ -6,11 +6,21 @@
 #include <cstdlib>
 #include <sstream>
 #include <signal.h>
+#include <unistd.h>
 
-GqrxConnection::GqrxConnection()
+GqrxConnection::GqrxConnection(const char* host, const char* port)
+	: m_host(host)
+	, m_port(port)
 {
 	signal(SIGPIPE, SIG_IGN);
-	m_socket = socket(AF_INET, SOCK_STREAM, 0);
+
+	reconnect();
+}
+
+void GqrxConnection::reconnect()
+{
+	if(m_socket >= 0)
+		close(m_socket);
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
@@ -19,12 +29,18 @@ GqrxConnection::GqrxConnection()
 	hints.ai_flags = 0;
 	hints.ai_protocol = 0; 
 
-	const char* hostname = "localhost"; 
-	const char* servicename = "7356";
 	struct addrinfo* result;
-	getaddrinfo(hostname, servicename, &hints, &result);
-
-	connect(m_socket, result->ai_addr, result->ai_addrlen);
+	getaddrinfo(m_host, m_port, &hints, &result);
+	while(result)
+	{
+		m_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+		if(m_socket != -1)
+			if(connect(m_socket, result->ai_addr, result->ai_addrlen) != -1)
+				break;
+		close(m_socket);
+		m_socket = -1;
+		result = result->ai_next;
+	}
 
 	freeaddrinfo(result);
 }
@@ -32,18 +48,16 @@ GqrxConnection::GqrxConnection()
 GqrxConnection::~GqrxConnection()
 {
 	if(m_socket >= 0)
-	{
-		//close(m_socket);
-	}
+		close(m_socket);
 }
 
 auto GqrxConnection::jumpToMark(const Bookmark& mark) -> Result
 {
 	std::string buf;
-	sendCommand("F %li\n", mark.m_frequency);
-	sendCommand("L SQL %0.2f\n", mark.m_squelch);
-	sendCommand("M %s %i\n", mark.m_mode, mark.m_passband);
-	return Result::SUCCESS;
+	Result setFrequency = sendCommand("F %li\n", mark.m_frequency);
+	Result setSquelch = sendCommand("L SQL %0.2f\n", mark.m_squelch);
+	Result setMode = sendCommand("M %s %i\n", mark.m_mode, mark.m_passband);
+	return setFrequency && setSquelch && setMode;
 }
 
 template<typename... FORMAT>

@@ -7,6 +7,10 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#include <cstring>
+#include <getopt.h>
+
+
 // Return \a numMarks writable Bookmarks stored in \a path, creating
 // the file if it does not exist.
 std::optional<Bookmark>* getBookmarkData(const char* path, int numMarks)
@@ -29,9 +33,59 @@ std::optional<Bookmark>* getBookmarkData(const char* path, int numMarks)
 	return reinterpret_cast<std::optional<Bookmark>*>(data);
 }
 
-int main()
+struct Options
 {
-	GqrxConnection a;
+	const char* m_savePath = nullptr;
+	const char* m_gqrxHost = "localhost";
+	const char* m_gqrxPort = "7356";
+};
+
+void printHelp()
+{
+	const char* version = "1.0";
+	std::cout << "gqrx-memory " << version << std::endl;
+	std::cout << "Arguments:" << std::endl;
+	std::cout << "  -h, --help             : This help message" << std::endl;
+	std::cout << "  -s, --savefile <file>  : Load/save memory to <file>" << std::endl;
+	std::cout << "  -c, --host <hostname>  : Connect to gqrx on <hostname> (default: localhost)" << std::endl;
+	std::cout << "  -p, --port <port>      : Connect to gqrx on <port> (default: 7356)" << std::endl;
+}
+
+Options parseOptions(int argc, char** argv)
+{
+	Options parsed;
+	static struct option long_options[] = {
+		{"help", no_argument, 0, 0},
+		{"savefile", required_argument, 0, 0},
+		{"host", required_argument, 0, 0},
+		{"port", required_argument, 0, 0},
+		{0, 0, 0, 0},
+	};
+	int c;
+	while(1) {
+		int option_index = 0;
+		c = getopt_long (argc, argv, "hs:c:p:", long_options, &option_index);
+		if (c == -1)
+			break;
+		if(c == '?' || c == 'h') {
+			printHelp();
+			exit(1);
+		}
+		else if(c == 's' || (c == 0 && std::strcmp(long_options[option_index].name, "savefile") == 0))
+			parsed.m_savePath = optarg;
+		else if(c == 'c' || (c == 0 && std::strcmp(long_options[option_index].name, "host") == 0))
+			parsed.m_gqrxHost = optarg;
+		else if(c == 'p' || (c == 0 && std::strcmp(long_options[option_index].name, "port") == 0))
+			parsed.m_gqrxPort = optarg;
+	}
+	return parsed;
+}
+
+int main(int argc, char** argv)
+{
+	Options options = parseOptions(argc, argv);
+
+	GqrxConnection a(options.m_gqrxHost, options.m_gqrxPort);
 	XlibKeyConnection b;
 
 	const char* savePath = "/home/eoin/.config/gqrx/savedMarks.dat";
@@ -43,7 +97,7 @@ int main()
 		if(mode == XlibKeyConnection::Mode::SAVE)
 		{
 			Bookmark cur;
-			if(a.getMark(cur) == GqrxConnection::Result::SUCCESS)
+			if(a.getMark(cur))
 			{
 				marks[slot] = cur;
 				std::cout << "Saving " << cur.m_frequency << " to slot " << slot << "\n";

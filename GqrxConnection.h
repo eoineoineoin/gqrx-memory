@@ -5,16 +5,25 @@
 class GqrxConnection
 {
 public:
-	GqrxConnection();
+	GqrxConnection(const char* host, const char* port);
 	~GqrxConnection();
 
 	GqrxConnection(const GqrxConnection&) = delete;
 	GqrxConnection& operator=(const GqrxConnection&) = delete;
 
-	enum class Result
+	struct Result
 	{
-		SUCCESS,
-		FAIL
+		enum Enum
+		{
+			SUCCESS,
+			FAIL
+		};
+
+		Result(Enum v) : m_value(v) {}
+		operator bool() const { return m_value == SUCCESS; }
+		Result operator&&(const Result& other) { return (*this && other) ? SUCCESS : FAIL; }
+	protected:
+		Enum m_value;
 	};
 
 	Result jumpToMark(const Bookmark& mark);
@@ -22,6 +31,8 @@ public:
 	Result getMark(Bookmark& markOut);
 
 protected:
+	void reconnect();
+
 	template<typename... FORMAT>
 	Result sendCommand(FORMAT... args);
 
@@ -33,6 +44,8 @@ protected:
 	void convertString(const char* in, float& out);
 	void convertString(const char* in, std::string& out);
 
-	int m_socket;
+	const char* m_host;
+	const char* m_port;
+	int m_socket = -1;
 };
 
