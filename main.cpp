@@ -15,6 +15,9 @@
 // the file if it does not exist.
 std::optional<Bookmark>* getBookmarkData(const char* path, int numMarks)
 {
+	if(!path)
+		return nullptr;
+
 	int filefd = open(path, O_CREAT | O_RDWR, 0666);
 	if(filefd < 0)
 		return nullptr;
@@ -81,40 +84,56 @@ Options parseOptions(int argc, char** argv)
 	return parsed;
 }
 
+void connectionError(GqrxConnection& conn)
+{
+	std::cout << "gqrx connection error\n";
+	exit(1);
+}
+
 int main(int argc, char** argv)
 {
 	Options options = parseOptions(argc, argv);
 
-	GqrxConnection a(options.m_gqrxHost, options.m_gqrxPort);
-	XlibKeyConnection b;
+	GqrxConnection gqrx(options.m_gqrxHost, options.m_gqrxPort);
+	if(!gqrx.isConnected())
+		connectionError(gqrx);
 
-	const char* savePath = "/home/eoin/.config/gqrx/savedMarks.dat";
+	XlibKeyConnection input;
+
 	const int numMarks = 12;
-	auto marks = getBookmarkData(savePath, numMarks);
+	auto marks = getBookmarkData(options.m_savePath, numMarks);
+	std::optional<Bookmark> nonSavedMarks[numMarks]; // Storage for marks if file failed loading
+	if(!marks) {
+		marks = nonSavedMarks;
+		if(options.m_savePath == nullptr) {
+			std::cout << "No save file specified. Marks will not be saved\n";
+		} else {
+			std::cout << "Could not open " << options.m_savePath << ". Marks will not be saved\n";
+		}
+	}
 
-	b.m_memoryCallback = [&](XlibKeyConnection::Mode mode, int slot)
+	input.m_memoryCallback = [&](XlibKeyConnection::Mode mode, int slot)
 	{
-		if(mode == XlibKeyConnection::Mode::SAVE)
-		{
+		if(slot < 0 || slot >= numMarks)
+			return;
+
+		if(mode == XlibKeyConnection::Mode::SAVE) {
 			Bookmark cur;
-			if(a.getMark(cur))
-			{
+			if(gqrx.getMark(cur)) {
 				marks[slot] = cur;
 				std::cout << "Saving " << cur.m_frequency << " to slot " << slot << "\n";
-			}
-			else
-			{
-				std::cout << "gqrx connection error\n";
+			} else {
+				connectionError(gqrx);
 			}
 		}
-		else if(mode == XlibKeyConnection::Mode::LOAD && marks[slot].has_value())
-		{
-			std::cout << "Jumping to slot " << slot << "\n";
-			a.jumpToMark(*marks[slot]);
+		else if(mode == XlibKeyConnection::Mode::LOAD && marks[slot].has_value()) {
+			if(!gqrx.jumpToMark(*marks[slot])) {
+				connectionError(gqrx);
+			}
 		}
 	};
 
-	b.run();
+	input.run();
 
 	return 0;
 }

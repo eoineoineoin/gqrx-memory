@@ -21,17 +21,18 @@ public:
 
 		Result(Enum v) : m_value(v) {}
 		operator bool() const { return m_value == SUCCESS; }
-		Result operator&&(const Result& other) { return (*this && other) ? SUCCESS : FAIL; }
+		Result operator&&(const Result& other) { return (!this || !other) ? FAIL : SUCCESS; }
 	protected:
 		Enum m_value;
 	};
 
 	Result jumpToMark(const Bookmark& mark);
-
 	Result getMark(Bookmark& markOut);
+	bool isConnected() const { return m_socket != -1; }
 
 protected:
 	void reconnect();
+	void closeSocket();
 
 	template<typename... FORMAT>
 	Result sendCommand(FORMAT... args);
