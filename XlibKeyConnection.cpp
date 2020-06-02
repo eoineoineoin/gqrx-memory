@@ -151,7 +151,8 @@ void XlibKeyConnection::run()
 	Window root = DefaultRootWindow(display);
 	XEvent ev;
 
-	KeySym shortcutKeys[] = {XK_F1, XK_F2, XK_F3, XK_F4};
+	KeySym shortcutKeys[] = { XK_F1, XK_F2, XK_F3, XK_F4, XK_F5, XK_F6,
+		XK_F7, XK_F8, XK_F9, XK_F10, XK_F11, XK_F12 };
 	for(auto keySym : shortcutKeys)
 	{
 		auto keycode = XKeysymToKeycode(display, keySym);
