@@ -120,7 +120,7 @@ struct ButtonState
 	// Since the actions we care about are both triggered due to a "timeout"
 	// edge, this returns a value to indicate any action the user has done:
 	UserInput checkTimeout(uint64_t now) {
-		if(m_state == PRESSED && (now - m_stateEntranceMs) > repeatTimeout) {
+		if(m_state == PRESSED && (now - m_stateEntranceMs) > saveTimeout) {
 			m_state = PRESSED_TRIGGERED;
 			return LONG_PRESS;
 		}
