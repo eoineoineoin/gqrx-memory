@@ -44,6 +44,7 @@ static uint64_t nowMs()
 
 /* This implements a simple state machine for managing each key
  * and squashing repeated press/release events from key repeat.
+ * Can be simplified, due to key repeat detection in event loop.
 digraph G
 {
 	Released -> Pressed [label=KeyPress]
@@ -173,6 +174,20 @@ void XlibKeyConnection::run()
 		const uint64_t paddingTime = 10; // Extra time to work around event queue latency
 		bool hasEvent = NextEventWithTimeout(display, &ev, minTimeout + paddingTime);
 		now = nowMs(); //Re-read now, because we potentially waited a long time
+
+		// Detect repeated KeyPress/KeyRelease events from key repeats:
+		if(hasEvent && ev.type == KeyRelease && XEventsQueued(display, QueuedAfterReading))
+		{
+			XEvent nev;
+			XPeekEvent(display, &nev);
+			if (nev.type == KeyPress && nev.xkey.time == ev.xkey.time && nev.xkey.keycode == ev.xkey.keycode)
+			{
+				// This is a duplicated event, so we can ignore it:
+				hasEvent = false;
+				// And remove the next event from the queue too:
+				XNextEvent(display, &nev);
+			}
+		}
 
 		if(hasEvent) {
 			KeySym key = XkbKeycodeToKeysym(display, ev.xkey.keycode, 0, 0);
