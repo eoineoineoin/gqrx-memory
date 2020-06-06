@@ -69,7 +69,8 @@ struct ButtonState
 		PRESSED_TRIGGERED,
 		TRIGGERED_CHECK_RELEASE,
 	} m_state = RELEASED;
-	uint64_t m_stateEntranceMs = 0;
+	uint64_t m_pressStateEntranceMs = 0;
+	uint64_t m_checkReleaseEntranceMs = 0;
 
 	const uint64_t repeatTimeout = 30;
 	const uint64_t saveTimeout = 300;
@@ -77,9 +78,9 @@ struct ButtonState
 	uint64_t getTimeoutMs(uint64_t now) const
 	{
 		if(m_state == CHECK_RELEASE || m_state == TRIGGERED_CHECK_RELEASE)
-			return repeatTimeout - (now - m_stateEntranceMs);
+			return repeatTimeout - (now - m_checkReleaseEntranceMs);
 		if(m_state == PRESSED)
-			return saveTimeout - (now - m_stateEntranceMs);
+			return saveTimeout - (now - m_pressStateEntranceMs);
 		return ~(0ull);
 	}
 
@@ -89,7 +90,7 @@ struct ButtonState
 			m_state = PRESSED;
 			// Only update the time when coming from RELEASED
 			// to avoid false negatives key repeats (coming from CHECK_RELEASE)
-			m_stateEntranceMs = now;
+			m_pressStateEntranceMs = now;
 		}
 		else if(m_state == CHECK_RELEASE) {
 			m_state = PRESSED;
@@ -103,11 +104,11 @@ struct ButtonState
 	{
 		if(m_state == PRESSED) {
 			m_state = CHECK_RELEASE;
-			m_stateEntranceMs = now;
+			m_checkReleaseEntranceMs = now;
 		}
 		else if(m_state == PRESSED_TRIGGERED) {
 			m_state = TRIGGERED_CHECK_RELEASE;
-			m_stateEntranceMs = now;
+			m_checkReleaseEntranceMs = now;
 		}
 	}
 
@@ -120,16 +121,16 @@ struct ButtonState
 	// Since the actions we care about are both triggered due to a "timeout"
 	// edge, this returns a value to indicate any action the user has done:
 	UserInput checkTimeout(uint64_t now) {
-		if(m_state == PRESSED && (now - m_stateEntranceMs) > saveTimeout) {
+		if(m_state == PRESSED && (now - m_pressStateEntranceMs) > saveTimeout) {
 			m_state = PRESSED_TRIGGERED;
 			return LONG_PRESS;
 		}
-		if(m_state == CHECK_RELEASE && (now - m_stateEntranceMs) > repeatTimeout)
+		if(m_state == CHECK_RELEASE && (now - m_checkReleaseEntranceMs) > repeatTimeout)
 		{
 			m_state = RELEASED;
 			return SHORT_PRESS;
 		}
-		if(m_state == TRIGGERED_CHECK_RELEASE && (now - m_stateEntranceMs) > repeatTimeout)
+		if(m_state == TRIGGERED_CHECK_RELEASE && (now - m_checkReleaseEntranceMs) > repeatTimeout)
 		{
 			m_state = RELEASED;
 		}
