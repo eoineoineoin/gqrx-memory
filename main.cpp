@@ -1,5 +1,6 @@
 #include <GqrxConnection.h>
 #include <XlibKeyConnection.h>
+#include <AudioPlayer.h>
 #include <iostream>
 #include <unistd.h>
 #include <sys/types.h>
@@ -95,10 +96,12 @@ int main(int argc, char** argv)
 	Options options = parseOptions(argc, argv);
 
 	GqrxConnection gqrx(options.m_gqrxHost, options.m_gqrxPort);
-	if(!gqrx.isConnected())
+	if(!gqrx.isConnected()) {
 		connectionError(gqrx);
+	}
 
 	XlibKeyConnection input;
+	AudioPlayer player;
 
 	const int numMarks = 12;
 	auto marks = getBookmarkData(options.m_savePath, numMarks);
@@ -121,7 +124,8 @@ int main(int argc, char** argv)
 			Bookmark cur;
 			if(gqrx.getMark(cur)) {
 				marks[slot] = cur;
-				std::cout << "Saving " << cur.m_frequency << " to slot " << slot << "\n";
+				std::cout << "Saved " << cur.m_frequency << " to slot " << slot << "\n";
+				player.beep();
 			} else {
 				connectionError(gqrx);
 			}
