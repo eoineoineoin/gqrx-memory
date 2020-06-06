@@ -7,8 +7,6 @@
 #include <unistd.h>
 #include <sys/timeb.h>
 
-#include <iostream>
-
 namespace
 {
 // Wrapper around XNextEvent which waits for a maximum amount of time
@@ -43,20 +41,16 @@ static uint64_t nowMs()
 }
 
 /* This implements a simple state machine for managing each key
- * and squashing repeated press/release events from key repeat.
- * Can be simplified, due to key repeat detection in event loop.
+ * and signalling when the user has performed a short/long press.
 digraph G
 {
 	Released -> Pressed [label=KeyPress]
-	Pressed -> CheckRelease [label=KeyRelease]
-	CheckRelease -> Pressed [label=KeyPress]
-	CheckRelease -> LOAD [label=Timeout]
+	Pressed -> LOAD [label=KeyRelease]
 	LOAD -> Released
+	Released [label=KeyRelease]
 	Pressed -> SAVE [label=Timeout]
 	SAVE -> Triggered
-	Triggered -> CheckRelease2 [label=KeyRelease]
-	CheckRelease2 -> Triggered [label=KeyPress]
-	CheckRelease2 -> Released [label=Timeout]
+	Triggered -> Released [label=KeyRelease]
 	SAVE [shape=box, style=dashed]
 	LOAD [shape=box, style=dashed]
 }
@@ -66,78 +60,67 @@ struct ButtonState
 	enum {
 		RELEASED,
 		PRESSED,
-		CHECK_RELEASE,
 		PRESSED_TRIGGERED,
-		TRIGGERED_CHECK_RELEASE,
 	} m_state = RELEASED;
 	uint64_t m_pressStateEntranceMs = 0;
-	uint64_t m_checkReleaseEntranceMs = 0;
 
-	const uint64_t repeatTimeout = 30;
 	const uint64_t saveTimeout = 300;
 
 	uint64_t getTimeoutMs(uint64_t now) const
 	{
-		if(m_state == CHECK_RELEASE || m_state == TRIGGERED_CHECK_RELEASE)
-			return repeatTimeout - (now - m_checkReleaseEntranceMs);
 		if(m_state == PRESSED)
 			return saveTimeout - (now - m_pressStateEntranceMs);
 		return ~(0ull);
 	}
 
-	void handleKeyDown(uint64_t now)
-	{
-		if(m_state == RELEASED) {
-			m_state = PRESSED;
-			// Only update the time when coming from RELEASED
-			// to avoid false negatives key repeats (coming from CHECK_RELEASE)
-			m_pressStateEntranceMs = now;
-		}
-		else if(m_state == CHECK_RELEASE) {
-			m_state = PRESSED;
-		}
-		else if(m_state == TRIGGERED_CHECK_RELEASE) {
-			m_state = PRESSED_TRIGGERED;
-		}
-	}
-
-	void handleKeyUp(uint64_t now)
-	{
-		if(m_state == PRESSED) {
-			m_state = CHECK_RELEASE;
-			m_checkReleaseEntranceMs = now;
-		}
-		else if(m_state == PRESSED_TRIGGERED) {
-			m_state = TRIGGERED_CHECK_RELEASE;
-			m_checkReleaseEntranceMs = now;
-		}
-	}
-
+	// Enum to indicate what kind of action a user has triggered
 	enum UserInput {
 		LONG_PRESS,
 		SHORT_PRESS,
 		NOTHING
 	};
 
-	// Since the actions we care about are both triggered due to a "timeout"
-	// edge, this returns a value to indicate any action the user has done:
+	UserInput handleKeyDown(uint64_t now)
+	{
+		if(m_state == RELEASED) {
+			m_state = PRESSED;
+			// Record the time to determine when a "jump" action becomes a "save"
+			m_pressStateEntranceMs = now;
+		}
+
+		return NOTHING;
+	}
+
+	UserInput handleKeyUp(uint64_t now)
+	{
+		if(m_state == PRESSED) {
+			m_state = RELEASED;
+			return SHORT_PRESS;
+		}
+		else if(m_state == PRESSED_TRIGGERED) {
+			m_state = RELEASED;
+		}
+		return NOTHING;
+	}
+
+	// Check for any "timeout" event if the user pressed and held a key
+	// for the duration required to trigger a "save" action
 	UserInput checkTimeout(uint64_t now) {
 		if(m_state == PRESSED && (now - m_pressStateEntranceMs) > saveTimeout) {
 			m_state = PRESSED_TRIGGERED;
 			return LONG_PRESS;
 		}
-		if(m_state == CHECK_RELEASE && (now - m_checkReleaseEntranceMs) > repeatTimeout)
-		{
-			m_state = RELEASED;
-			return SHORT_PRESS;
-		}
-		if(m_state == TRIGGERED_CHECK_RELEASE && (now - m_checkReleaseEntranceMs) > repeatTimeout)
-		{
-			m_state = RELEASED;
-		}
 		return NOTHING;
 	}
 };
+
+void fireUserAction(ButtonState::UserInput input, int idx, std::function<void(XlibKeyConnection::Mode, int)>& f)
+{
+	if(input == ButtonState::LONG_PRESS)
+		f(XlibKeyConnection::Mode::SAVE, idx);
+	if(input == ButtonState::SHORT_PRESS)
+		f(XlibKeyConnection::Mode::LOAD, idx);
+}
 }
 
 XlibKeyConnection::XlibKeyConnection()
@@ -195,18 +178,15 @@ void XlibKeyConnection::run()
 			if(iter != std::end(shortcutKeys)) {
 				int idx = std::distance(std::begin(shortcutKeys), iter);
 				if(ev.type == KeyPress)
-					states[idx].handleKeyDown(now);
+					fireUserAction(states[idx].handleKeyDown(now), idx, m_memoryCallback);
 				if(ev.type == KeyRelease)
-					states[idx].handleKeyUp(now);
+					fireUserAction(states[idx].handleKeyUp(now), idx, m_memoryCallback);
 			}
 		}
 
 		for(auto iter = states.begin(); iter < states.end(); iter++) {
 			ButtonState::UserInput result = iter->checkTimeout(now);
-			if(result == ButtonState::LONG_PRESS)
-				m_memoryCallback(Mode::SAVE, std::distance(states.begin(), iter));
-			if(result == ButtonState::SHORT_PRESS)
-				m_memoryCallback(Mode::LOAD, std::distance(states.begin(), iter));
+			fireUserAction(result, std::distance(states.begin(), iter), m_memoryCallback);
 		}
 	}
 
@@ -218,3 +198,5 @@ void XlibKeyConnection::run()
 
     XCloseDisplay(display);
 }
+
+
